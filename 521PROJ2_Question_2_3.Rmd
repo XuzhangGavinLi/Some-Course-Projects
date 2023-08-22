@@ -1,0 +1,418 @@
+---
+title: "521 Proj 2"
+author: "Xuzhang 'Gavin' Li"
+date: "2022-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(hrbrthemes)
+library(tidyr)
+library(viridis)
+Sys.setenv(LANG = "en")
+setwd("C:/Users/Xuzha/OneDrive/Desktop/FA22/STA 521")
+```
+
+## R Markdown
+
+
+```{r}
+t1 <- read.table("imagem1.txt")
+t2 <- read.table("imagem2.txt")
+t3 <- read.table("imagem3.txt")
+t12 <- rbind(t1, t2)
+t <- rbind(t12, t3)
+t1 <- t1[t1$V3 != 0,]
+t2 <- t2[t2$V3 != 0,]
+t3 <- t3[t3$V3 != 0,]
+t12 <- rbind(t1, t2)
+t <- rbind(t12, t3)
+```
+
+## 2. Preparation
+
+### 2.1
+
+To split the entire data, including all three data sets (the three images), imagem1.txt, imagem2.txt, and imagem3.txt, into training, validation, and testing sets, it is important to note that simple i.i.d method of separation would not be optimal due to the strong spatial correlation of the data. In order to preserve the spatial correlation of the data, block cv would be efficient as it maintains the spatial structure of the data and the data points in each block would be roughly more similar to each other, and ensure that in most cases a pixel would be in the same block as its close neighbors, so the spatial integrity of the data is preserved.
+
+Since the three data sets represents three different images, the most natural and standard way of spliting the data with block cv would cut each of the images (data sets) into blocks, and randomly put the blocks into training, validation, and testing sets. Specifically, each of the three images are split into 16 roughly even rectangular blocks, with 12 of the blocks randomly selected to be the training set, 2 of the other 4 blocks randomly selected to be the testing set, and the rest 2 blocks selected to be the testing set. With this random block selection done to each of the three images, there would be a training set containing data from 36 blocks (12 from each of the images), a validation set and a testing set each containing 6 blocks (2 from each of the images), with the separation of blocks completely random.
+
+An alternative method of data splitting would also use the block cv technique as spatial correlation is definitely needed to be preserved in this analysis. Instead of randomly select 12 blocks, 2 blocks, and 2 blocks into the training, validation, and testing set respectively from each of the images, it also makes sense to simply split each image into 64 roughly even blocks, mix up all 192 blocks, and then randomly select 144 blocks as the training set, 24 blocks as the validation set, and 24 blocks as the testing set. This way, the proportion of data in each set would be more random and as it is likely not to be evenly distributed among the images. As the number of blocks were also increased, the randomization was further strengthened and closer to simple i.i.d, while the spatial relation of the data is captured to a lesser extent. Also as the three images might be inherently different in their properties, this methods contains the risk of separating too much of a specific image into a certain set and produce a rather skewed result. 
+
+For some of the following analysis, the first method of data separation is used. Also note that data points without an expert label (i.e. with an unlabeled expert model) are removed. They provide no valuable information to the model and cross-validation as classification success and failure rate all depends o the existence of an expert label. Note that this removed 137495 rows out of 345556 rows, so a significant portion of the data was removed due to unlabeled expert labels.
+
+```{r r1}
+set.seed(123)
+t1b <- t1
+t1b$block <- 4*(t1b$V1 %/% 96) + (t1b$V2 %/% 93) + 1
+trainvalidblocks <- sample(1:16, replace = F, size = 14)
+trainblocks <- sample(trainvalidblocks, replace = F, size = 12)
+validblocks <- setdiff(trainvalidblocks, trainblocks)
+testblocks <- setdiff(1:16, trainvalidblocks)
+t1_train <- t1b[t1b$block %in% trainblocks,]
+t1_valid <- t1b[t1b$block %in% validblocks,]
+t1_test <- t1b[t1b$block %in% testblocks,]
+
+t2b <- t2
+t2b$block <- 4*(t2b$V1 %/% 96) + (t2b$V2 %/% 93) + 17
+trainvalidblocks <- sample(17:32, replace = F, size = 14)
+trainblocks <- sample(trainvalidblocks, replace = F, size = 12)
+validblocks <- setdiff(trainvalidblocks, trainblocks)
+testblocks <- setdiff(17:32, trainvalidblocks)
+t2_train <- t2b[t2b$block %in% trainblocks,]
+t2_valid <- t2b[t2b$block %in% validblocks,]
+t2_test <- t2b[t2b$block %in% testblocks,]
+
+t3b <- t3
+t3b$block <- 4*(t3b$V1 %/% 96) + (t3b$V2 %/% 93) + 33
+trainvalidblocks <- sample(33:48, replace = F, size = 14)
+trainblocks <- sample(trainvalidblocks, replace = F, size = 12)
+validblocks <- setdiff(trainvalidblocks, trainblocks)
+testblocks <- setdiff(33:48, trainvalidblocks)
+t3_train <- t3b[t3b$block %in% trainblocks,]
+t3_valid <- t3b[t3b$block %in% validblocks,]
+t3_test <- t3b[t3b$block %in% testblocks,]
+
+
+train_set1 <- rbind(rbind(t1_train, t2_train), t3_train)
+valid_set1 <- rbind(rbind(t1_valid, t2_valid), t3_valid)
+train_valid_set1 <- rbind(train_set1,valid_set1)
+train_valid_set1$V3 <- (train_valid_set1$V3+1)/2
+test_set1 <- rbind(rbind(t1_test, t2_test), t3_test)
+test_set1$V3 <- (test_set1$V3+1)/2
+
+set.seed(111)
+t1b <- t1
+
+t1b$block <- 8*(t1b$V1 %/% 48) + (t1b$V2 %/% 47) + 1
+t2b <- t2
+t2b$block <- 8*(t2b$V1 %/% 48) + (t2b$V2 %/% 47) + 65
+t3b <- t3
+t3b$block <- 8*(t3b$V1 %/% 48) + (t3b$V2 %/% 47) + 129
+tb <- rbind(rbind(t1b, t2b), t3b)
+
+trainvalidblocks <- sample(1:192, replace = F, size = 168)
+trainblocks <- sample(trainvalidblocks, replace = F, size = 144)
+validblocks <- setdiff(trainvalidblocks, trainblocks)
+testblocks <- setdiff(1:192, trainvalidblocks)
+train_set2 <- tb[tb$block %in% trainblocks,]
+valid_set2 <- tb[tb$block %in% validblocks,]
+train_valid_set2 <- rbind(train_set2, valid_set2)
+train_valid_set2$V3 <- (train_valid_set2$V3+1)/2
+test_set2 <- tb[tb$block %in% testblocks,]
+test_set2$V3 <- (test_set2$V3+1)/2
+```
+
+### 2.2
+
+The trivial classifier was introduced which simple sets all classified labels to be -1, which represent cloud-free, on the validation and testing set. The accuracy of this trivial classifier is also trivial in some sense as it simply captures the proportion of -1 expert label (the proportion of cloud-free expert labels) in the validation set and the testing set. Again, as noted previously, all 137495 data points with unlabeled expert labels were removed as they contribute no valuable information to model construction and cross-validation.
+
+In the case of this trivial classifier, the validation set classification accuracy is 0.632, and the test set classification accuracy is 0.784. When a certain label makes up a large proportion of data, these kind of trivial classifiers would actually have high average accuracy. In this case, this trivial classifier provided rather moderately high classification accuracy, and serves as a baseline of classification accuracy that the cross-validation trained models need to improve upon. This kind of trivial classifier baseline is important as sometimes even a high 95% model classification rate would be weak if a trivial classifier can produce similar accuracy.
+
+```{r}
+dim(filter(valid_set1, V3 == -1))[1]/dim(valid_set1)[1]
+dim(filter(test_set1, V3 == -1))[1]/dim(test_set1)[1]
+```
+
+### 2.3
+
+```{r}
+#t_rm <- t[!is.na(t$V3),]
+tdf <- as.data.frame(t)
+tdf$V3 <- (tdf$V3 + 1)/2
+reg_ols <- lm(V3 ~ V4+V5+V6+V7+V8+V9+V10+V11, data=tdf)
+log_reg <- glm(V3 ~ V4+V5+V6+V7+V8+V9+V10+V11, data = tdf, family = "binomial")
+
+log_reg
+reg_ols
+
+t1_rm <- t1[t1$V3!=0,]
+t1df <- as.data.frame(t1_rm)
+t1df$V3 <- (t1df$V3 + 1)/2
+reg_ols <- lm(V3 ~ V4+V5+V6+V7+V8+V9+V10+V11, data=t1df)
+log_reg <- glm(V3 ~ V4+V5+V6+V7+V8+V9+V10+V11, data = t1df, family = "binomial")
+
+
+## PCA
+pca_direc <- prcomp(tdf[, 4:11], center = TRUE, scale = TRUE)
+loadings <- pca_direc$rotation
+loadings[, 1:3]
+scores <- pca_direc$x
+scores[, 1:3]
+eigenvalues <- pca_direc$sdev^2
+eigenvalues
+ggplot() + geom_line(aes(x=seq(1:length(eigenvalues)),
+                         y=cumsum(eigenvalues)/sum(eigenvalues))) +
+  labs(x='Number of PCs', y='Total percentange variability', title = 'PCA Scree Plot')
+
+```
+
+```{r}
+t$expert_label <- as.factor(t$V3)
+t$NDAI <- t$V4
+t$SD <- t$V5
+t$CORR <- t$V6
+
+ggplot(t) +
+geom_point(aes(x=NDAI, y=CORR, color=expert_label), alpha=0.8)
+ggplot(t) +
+geom_point(aes(x=NDAI, y=SD, color=expert_label), alpha=0.8)
+ggplot(t) +
+geom_point(aes(x=SD, y=CORR, color=expert_label), alpha=0.8)
+
+#ggplot(t) +
+#geom_point(aes(x=V4, y=V11, color=as.factor(V3)), alpha=0.8)
+#ggplot(t) +
+#geom_point(aes(x=V5, y=V11, color=as.factor(V3)), alpha=0.8)
+#ggplot(t) +
+#geom_point(aes(x=V6, y=V11, color=as.factor(V3)), alpha=0.8)
+dfcoef <- as.data.frame(log_reg$coefficients)
+dfcoef$variable <- c("intercept", "NDAI", "SD", "CORR", "Angle DF",
+                     "Angle CF", "Angle BF", "Angle AF", "Angle AN")
+dfcoef$coefficients <- dfcoef$`log_reg$coefficients`
+ggplot(dfcoef, aes(x= variable, y = coefficients)) + geom_bar(stat="identity") +
+  ggtitle("Variable Importance Plot for Explorational Logistic Regression On  Expert Label")
+```
+
+Based on the logistic regression result, it is clear that V4 (NDAI) and V6 (CORR) are the two most significant predictor variables for the expert label V3, while the other variables seem much less significant. The variable importance of these two variables are 38.7 and 1.6 while all other variable importance have absolute values less than 0.2. In combination with evidences in the paper, it would only make sense to always include these two variables in all of the following models and analysis. 
+
+According to the EDA done to all the variables(see figures previous pages), there is a clear difference in NDAI and SD for cloud and cloud-free groups of the data, and it can be inferred that NDAI and SD would be efficient predictors variables for the expert label, which is also consistent with the research as well. 
+
+Based off the PCA, the first principal component contains roughly 75% of the variability of the data set, with (-0.31, -0.28, - 0.27, 0.26, 0.38, 0.42, 0.43, 0.42). With each variable having a coefficient within 0.28-0.43, the weight is roughly even and there isn't much to conclude from the PCA that would add to the logistic regression. 
+
+Based on all these information, to select the most efficient and reasonable predictor variables for the expert label, NDAI, SD, and CORR are the three most desirable predictors. This selection of variable is also consistent with the paper as none of the radiance angles are particularly special and unique, and thus it would make little sense to include some radiance angles while excluding the others in the models.
+
+To further visualize the effectiveness of the selected NDAI, SD, and CORR predictors, pairwise scatter-plots are shown below with the expert label as a factor, and vague cut-off and patterns could be observed within each of these plots.
+
+
+
+## 2.4
+```{r}
+library(caret)
+library(MASS)
+library(e1071)
+CVmaster <- function(clas_func, features, labels, K, loss_func, split_opt, tr1, te1, tr2, te2){
+      train_valid_set1 <- tr1
+      train_valid_set2 <- tr2
+      test_set1 <- te1
+      test_set2 <- te2
+    if (split_opt == 1){
+      blocks <- unique(train_valid_set1$block)
+      folds <- createFolds(blocks, k = K)
+      currFormula <- as.formula(paste(labels, "~",
+                                      paste(features[], collapse = "+"), sep = ""))
+      loss = rep(0, K)
+      for (i in 1:K){
+        Val <- train_valid_set1[train_valid_set1$block %in% folds[[i]],]
+        Train <- train_valid_set1[!train_valid_set1$block %in% folds[[i]],]
+        if(clas_func == "glm"){
+          model <- glm(currFormula, data = Train, family = "binomial")
+        }
+        if(clas_func == "lda"){
+          model <- lda(currFormula, data = Train)
+        }
+        if(clas_func == "qda"){
+          model <- qda(currFormula, data = Train)
+        }
+        if(clas_func == "nb"){
+          model <- naiveBayes(currFormula, data = Train)
+        }
+        pred <- predict(model, Val)
+        true <- Val$V3
+        if(clas_func == "glm"){
+          pred$class <- pred > 0.5
+        }
+        if(clas_func == "nb"){
+          pred$class <- pred
+        }
+        loss[i] = mean(pred$class != true)
+      }
+      return (loss)
+    }
+    if (split_opt == 2){
+      blocks <- unique(train_valid_set2$block)
+      folds <- createFolds(blocks, k = K)
+      currFormula <- as.formula(paste(labels, "~",
+                                      paste(features[], collapse = "+"),
+                                      sep = ""))
+      loss = rep(0, K)
+      for (i in 1:K){
+        Val <- train_valid_set2[train_valid_set2$block %in% folds[[i]],]
+        Train <- train_valid_set2[!train_valid_set2$block %in% folds[[i]],]
+        if(clas_func == "glm"){
+          model <- glm(currFormula, data = Train, family = "binomial")
+        }
+        if(clas_func == "lda"){
+          model <- lda(currFormula, data = Train)
+        }
+        if(clas_func == "qda"){
+          model <- qda(currFormula, data = Train)
+        }
+        if(clas_func == "nb"){
+          model <- naiveBayes(currFormula, data = Train)
+        }
+        pred <- predict(model, Val)
+        true <- Val$V3
+        if(clas_func == "glm"){
+          pred$class <- pred > 0.5
+        }
+        if(clas_func == "nb"){
+          pred$class <- pred
+        }
+        loss[i] = mean(pred$class != true)
+      }
+      return (loss)
+    }
+}
+MSE <- function(a, b){
+  return (mean((a-b)^2))
+}
+
+```
+
+## 3.1
+```{r}
+    tr1<- train_valid_set1
+    tr2<-train_valid_set2
+    te1<-test_set1 
+    te2<-test_set2
+glm_acc <- 1- CVmaster(clas_func = "glm", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 1, tr1, te1, tr2, te2)
+lda_acc <- 1- CVmaster(clas_func = "lda", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 1, tr1, te1, tr2, te2)
+qda_acc <- 1- CVmaster(clas_func = "qda", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 1, tr1, te1, tr2, te2)
+nb_acc <- 1- CVmaster(clas_func = "nb", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 1, tr1, te1, tr2, te2)
+
+glm_acc2 <- 1- CVmaster(clas_func = "glm", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 2, tr1, te1, tr2, te2)
+lda_acc2 <- 1- CVmaster(clas_func = "lda", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 2, tr1, te1, tr2, te2)
+qda_acc2 <- 1- CVmaster(clas_func = "qda", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 2, tr1, te1, tr2, te2)
+nb_acc2 <- 1- CVmaster(clas_func = "nb", features = c("V4","V5","V6"), labels = "V3", K = 5, 
+         loss_func = MSE, split_opt = 2, tr1, te1, tr2, te2)
+
+fold_num <- c("fold1","fold2", "fold3", "fold4", "fold5")
+split1_acc <- data.frame(fold_num, glm_acc, lda_acc, qda_acc, nb_acc)
+split2_acc <- data.frame(fold_num, glm_acc2, lda_acc2, qda_acc2, nb_acc2)
+split1_acc
+split2_acc
+```
+The split1_acc and split2_acc are the fold 1-5 accuracies for spliting methods 1 and 2 respectively.
+
+```{r}
+library(pROC)
+test_acc1 <- rep(0, 4)
+true <- test_set1$V3
+glm1 <- glm(V3~V4+V5+V6,data=train_valid_set1, family = 'binomial') 
+pred <- predict(glm1, test_set1, type = "response")
+class <- as.numeric(pred > 0.1)
+table0.1 <- table(true, class)
+class <- as.numeric(pred > 0.3)
+table0.3 <- table(true, class)
+class <- as.numeric(pred > 0.5)
+table0.5 <- table(true, class)
+class <- as.numeric(pred > 0.7)
+table0.7 <- table(true, class)
+class <- as.numeric(pred > 0.9)
+table0.9 <- table(true, class)
+table0.1
+table0.3
+table0.5
+table0.7
+table0.9
+test_acc1[1] <- mean((pred > 0.5) == true)
+glm1_roc_score=roc(true, pred) #AUC score
+plot(glm1_roc_score ,main ="ROC curve -- Logistic Regression", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+
+
+lda1 <- lda(V3~V4+V5+V6,train_valid_set1) 
+pred <- predict(lda1, test_set1)
+test_acc1[2] <- mean(pred$class == true)
+lda1_roc_score=roc(true, as.numeric(pred$x)) #AUC score
+plot(lda1_roc_score ,main ="ROC curve -- LDA", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+qda1 <- qda(V3~V4+V5+V6,train_valid_set1) 
+pred <- predict(qda1, test_set1)
+test_acc1[3] <- mean(pred$class == true)
+qda1_roc_score=roc(true, as.numeric(pred$class)) #AUC score
+plot(qda1_roc_score ,main ="ROC curve -- QDA", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+nb1 <- naiveBayes(V3~V4+V5+V6,train_valid_set1) 
+pred <- predict(nb1, test_set1)
+test_acc1[4] <- mean(pred == true)
+nb1_roc_score=roc(true, as.numeric(pred)) #AUC score
+plot(nb1_roc_score ,main ="ROC curve -- Naive Bayes", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+ggplot()  + geom_line(aes(x=1-qda1_roc_score$specificities, y=qda1_roc_score$sensitivities), color="blue") + geom_line(aes(x=1-glm1_roc_score$specificities,y=glm1_roc_score$sensitivities), color="green") + geom_line(aes(x=1-nb1_roc_score$specificities,y=nb1_roc_score$sensitivities), color="orange") + geom_line(aes(x=1-lda1_roc_score$specificities,y=lda1_roc_score$sensitivities), color="red") + labs(x="False Positive Rate", y = "True Positive Rate", title = "ROC Curve Comparison For Data Splitting Method 1") + geom_point(aes(x = 0.091, y = 0.934, size = 3))
+
+
+test_acc2 <- rep(0, 4)
+true <- test_set2$V3
+glm2 <- glm(V3~V4+V5+V6,data=train_valid_set2, family = 'binomial') 
+pred <- predict(glm2, test_set2, type = "response")
+test_acc2[1] <- mean((pred > 0.5) == true)
+glm2_roc_score=roc(true, pred) #AUC score
+plot(glm2_roc_score ,main ="ROC curve -- Logistic Regression", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+class <- as.numeric(pred > 0.1)
+table0.1 <- table(true, class)
+class <- as.numeric(pred > 0.3)
+table0.3 <- table(true, class)
+class <- as.numeric(pred > 0.5)
+table0.5 <- table(true, class)
+class <- as.numeric(pred > 0.7)
+table0.7 <- table(true, class)
+class <- as.numeric(pred > 0.9)
+table0.9 <- table(true, class)
+table0.1
+table0.3
+table0.5
+table0.7
+table0.9
+
+lda2 <- lda(V3~V4+V5+V6,train_valid_set2) 
+pred <- predict(lda2, test_set2)
+test_acc2[2] <- mean(pred$class == true)
+lda2_roc_score=roc(true, as.numeric(pred$x)) #AUC score
+plot(lda2_roc_score ,main ="ROC curve -- LDA", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+qda2 <- qda(V3~V4+V5+V6,train_valid_set2) 
+pred <- predict(qda2, test_set2)
+test_acc2[3] <- mean(pred$class == true)
+qda2_roc_score=roc(true, as.numeric(pred$class)) #AUC score
+plot(qda2_roc_score ,main ="ROC curve -- QDA", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+nb2 <- naiveBayes(V3~V4+V5+V6,train_valid_set2) 
+pred <- predict(nb2, test_set2)
+test_acc2[4] <- mean(pred == true)
+nb2_roc_score=roc(true, as.numeric(pred)) #AUC score
+plot(nb2_roc_score ,main ="ROC curve -- Naive Bayes", xlab = "False_Positive_Rate",
+     ylab = "True_Positive_Rate")
+
+ggplot()  + geom_line(aes(x=1-qda2_roc_score$specificities, y=qda2_roc_score$sensitivities), color="blue") + geom_line(aes(x=1-glm2_roc_score$specificities,y=glm2_roc_score$sensitivities), color="green") + geom_line(aes(x=1-nb2_roc_score$specificities,y=nb2_roc_score$sensitivities), color="orange") + geom_line(aes(x=1-lda2_roc_score$specificities,y=lda2_roc_score$sensitivities), color="red") + labs(x="False Positive Rate", y = "True Positive Rate", title = "ROC Curve Comparison For Data Splitting Method 2") + geom_point(aes(x = 0.1251, y = 0.89, size = 3))
+#Blue:qda, Red:lda, Orange: naive bayes, Green: logistic
+
+```
+
+```{r}
+test_acc1
+test_acc2
+model_type <- c("logistic regression","linear discriminant analysis", "quadratic discriminant analysis","naive bayes")
+test_acc<-data.frame(model_type,test_acc1, test_acc2)
+test_acc
+```
+And this is the test accuracy of the models.
