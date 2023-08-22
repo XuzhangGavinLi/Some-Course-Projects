@@ -1,0 +1,229 @@
+---
+title: "Stat 153 Final Project"
+author: "Xuzhang 'Gavin' Li"
+date: "2021/5/11"
+output:
+    pdf_document:
+        latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(csv)
+library(ggplot2)
+library(dplyr)
+library(astsa)
+library(knitr)
+```
+
+## 1 Executive Summary
+
+```{r, echo=FALSE}
+df <- read.csv("data_covid.csv")
+```
+
+Pathologist working at the fifth burrough of Gotham City has been tracking the number of 
+new daily Covid cases in this area since March 2020 to January 2021, and the goal of this project is to predict the number of daily new cases for the next ten days at the fifth burrough of Gotham City. After experimenting with four different models, we have selected with cross validation a degree-4 parametric model with seasonal ARMA(0,1)x(0,1)[7] (autoregressive moving average) and predicted the number of new Covid cases in the burrough for the next 10 days.
+
+## 2 Exploratory Data Analysis 
+
+Figure 1 below depicts daily number of new Covid cases in the fifth burrough of Gotham City from 3/29/2020 to 1/24/2021. 
+     
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 1: In the left panel, daily number of new covid cases in the fifth burrough of gotham city. In the right panel is the same plot but in log scale."}
+plot(df$ID, df$cases, type = "o", 
+     xlab = "Number of Days Since Covid Recording Starts On 3/29/2020", 
+     ylab = "Daily Number of New Cases",
+     main = "Daily Number of New Covid Cases in the 
+     Fifth Burrough of Gotham City",
+     cex.main=1)
+plot(df$ID, log(df$cases), type = "o", 
+     xlab = "Number of Days Since Covid Recording Starts On 3/29/2020", 
+     ylab = "Daily Number of New Cases, In Log Scale",
+     main = "Daily Number of New Covid Cases in the 
+     Fifth Burrough of Gotham City, In Log Scale",
+     cex.main=1)
+```
+
+This plot is clearly not stationary due to trend, seasonality, and changing variances, and all of these needs to be dealt with to reach stationarity. Firstly, there is a clear upward (increasing) trend. There are thousands of daily new Covid cases when Covid has just started on March 2020, and this number grew to a hundred of thousands gradually, and ever since we never went back to the thousands, and now the daily number of new Covid cases are almost at two hundred thousands. Secondly, the variance clearly variate over time. In the first 50 days of Covid the variance is clearly extremely small comparing to other days, and the 50th-100th days have relatively small variances as well. In days after the 100th day, the variance is arguably growing as well, but regardless of whether the variance is growing after the 100th day, a variance stabilizing transformation (VST) would definitely needed to be performed. Thirdly, there seems to be a rather clear seasonality of 7, or weekly seasonality, and by taking a closer look to Figure 1, it could be told that in general two days in a week have significantly lower new Covid cases than other days in the week.
+
+As discussed, a VST is likely necessary to ensure heteroscedastity. As can be seen in Figure 1, the variance is seemingly growing linearly, a log scale VST is taken, and the plot of the data after taken a log scale VST can be seen in figure 1.
+
+## 3 Models Considered
+
+Both a parametric model and a differencing model has been used to approach stationary with this data. Both of these models of signals were complimented with an autoregressive moving average (ARMA) model of the noise.
+
+
+### 3.1 Parametric Signal Model
+
+From Figure 1, it can be seen that there are about 3 significant local minimum/maximums, at about 0, 120, and 200. A simple but intuitive idea following this observation would be doing a linear fit with a polynomial of degree 4. Described in a more complete manner, in this degree-4 parametric signal model, the number of new Covid cases is fitted by the number of days since Covid recording started, the second power of the number of days since Covid recording started, the third power of the number of days since Covid recording started, and the fourth power of the number of days since Covid recording started. 
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 2: Residual Plot of Parametric Signal Model.", fig.align='center'}
+df <- filter(df, cases != 0)
+
+log_cases <- log(df$cases)
+id <- df$ID
+
+model11 <- lm(log(df$cases) ~ df$ID + I(df$ID^2) + I(df$ID^3) + I(df$ID^4))
+
+plot(id, model11$residuals, type = "o", 
+     xlab = "Number of Days Since Our Recording Starts On 3/29/2020",
+     ylab = "Residuals",
+     main = "Residual Plot of Parametric Signal Model",
+     cex.main=1)
+```
+
+The residual resulted by this degree-4 parametrix signal model can be seen in Figure 2, and while this plot seems quite stationary in terms of trend or variances, there seems to be a clearly seasonality in this residual plot, namely a clearly seasonality with period 7, or weekly seasonality. As this kind of weekly seasonality can hardly be addressed by a parametric signal model, this residual plot is considered plausibly stationary and fairly reasonale, though it is necessary to address seasonality with further analysis.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 3: autocorrelation function (ACF) and partial autocorrelation function (PACF) of the residuals of the parametric signal model."}
+acf(model11$residuals, main = "ACF of Parametric Model Residuals")
+pacf(model11$residuals, main = "PACF of Parametric Model Residuals")
+```
+
+The autocorrelation function (ACF) and partial autocorrelation function (PACF) of the residual plot in Figure 3 shows plausible staionarity with a rather clear seasonality component with period around 7. As aforementioned this seasonality can be hardly modeled by a parametric model, it would be handled in further analysis.
+
+#### 3.1.1 Parametric Model with ARMA(0,1)x(0,1)[7]
+
+The chosen Seasonal Autoregressive Integrated Moving Average (SARIMA) model has parameters p = 0, q = 1, P = 0, Q = 1, S = 7. These values are chosen based off the ACF and PACF plots of the residuals as shown in figure 3. The ACF value is at the highest at lags = 7, 14, and 21, and surrounded by high values at lags = 6, 8, 13, 15, 20, 22, and so there is a rather clear periodicity of period 7 with order 1 moving average (MA) component, so q = 1. WIth all of these information combined it is only reasonable to assume that there is a seasonality with period 7 and therefore conduct a SARIMA with period 7. It is arguably hard to tell if there is a clear exponential decay from the relatively disordered ACF and PACF, so conservatively the autoregressive (AR) component is assumed to be non-existent and so p = 0 is set.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 4: In the left panel, the standarized residuals, ACF of residuals, normal Q-Q plot of standarized residuals, and p-values for Ljung-Box statistic for ARMA(0,1)x(0,1)[7]. In the right Panel, those for ARMA(1,1)x(0,1)[7]"}
+armod11 = sarima(model11$residuals, p = 0, q = 1, d = 0, P = 0, Q = 1, S = 7, D = 1)
+armod22 = sarima(model11$residuals, p = 1, q = 1, d = 0, P = 0, Q = 1, S = 7, D = 1)
+```
+
+The results of the SARIMA model are shown in the left panel of figure 4. The result seems stationary as the most of the values in the ACF of the residuals fall between the blue confidence intervals, and the majority of p-values for Ljung-Box statistic are significant (above the blue line), especially the first few p-values for Ljung-Box statistic at lags < 5 are very large and thus also very significant.
+
+#### 3.1.2 Parametric Model with ARMA(1,1)x(0,1)[7]
+
+The chosen SARIMA model has parameters p = 1, q = 1, P = 0, Q = 1, S = 7. Similar to the previous SARIMA model, these values are chosen based off the ACF and PACF plots of the residuals as shown in figure 3. q = Q = 1 is set by the same reasonaing as the previous model as the ACF value is at the highest at lags = 7, 14, and 21, and surrounded by high values at lags = 6, 8, 13, 15, 20, 22, and so there is a rather clear periodicity of period 7 with order 1 moving average (MA) component. However, the previous model is rather conservative in assuming there is no AR component while the ACF in figure 3 does indeed show some signs of exponential decay and AR. The PACF seems a bit disordered, but it clearly cuts off after lag = 7. And so this resemble an AR(1) better than higher orders of AR. Therefore, in this model, the AR component is added into the previous model with now p = 1 instead of p = 0.
+
+The results of the mode are shown in the right panel of figure 4. Similar to the previous model. The result seems stationary as the most of the values in the ACF of the residuals fall between the blue confidence intervals. The p-values for Ljung-Box is still showing decent stationarity as the p-values are still very significant at small lags, and there are some significant p-values at higher lags as well.
+
+### 3.2 Differencing
+
+As aforementioned in section 3.1, that the parametric signal model residual is plausibly stationary, while weekly seasonality can be seen from both Figure 3, 4, and 5, namely the residual, ACF, and PACF plots of the parametric model residual. Therefore, it is only natural to perform a lag 7 differencing to attempt to cancel the weekly seasonality/periodicity effects. Another lag 1 differencing is performed as well to cancel the effect of the general increasing trend of the original data as in Figure 1, and therefore the resulting plot should be plausibly stationary.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 5: Differencing plot with weekly and first-order differencing.", , fig.align='center'}
+# equal weight moving average/Rolling window/q-step smoothing
+df50 <- filter(df, cases != 0, ID >= 51)
+
+log_cases50 <- log(df50$cases)
+id <- df50$ID
+
+weekly.diffs = diff(log(df$cases), lag = 7)
+double.diffs = diff(weekly.diffs, lag = 1)
+plot(double.diffs, type = "o", 
+     xlab = "Days Since Covid Recording Starts On 3/29/2020", 
+     ylab = "Differences", 
+     main = "Differencing Plot Using Weekly and First-order Differencing",
+     cex.main=1)
+```
+
+The differencing plot using both weekly and daily differencing is shown in Figure 6, which seems plausibly stationary indeed, except that the variances around the 100th-200th days since Covid recording starts seems to have a larger variance than the rest of the days.
+
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 6：ACF and PACF plots of the differencing 'signal model' residuals."}
+
+acf(double.diffs, main = "ACF/PACF of Model 2 Residuals")
+pacf(double.diffs, main = "ACF/PACF of Model 2 Residuals")
+```
+
+The ACF and PACF plots of the differencing are shown in Figure 7 and Figure 8 respectively. While the PACF certainly doesn't show stationary as a large number of PACF bars go beyond the blue confidence intervals by a large extent, the ACF plot shows plausible stationarity as the ACF bars only go beyond the blue confidence intervals by a small extent, and for lags > 10, the ACF bars are all within the blue lines, and are rather stable as well.
+
+#### 3.2.1 Differencing with ARMA(1, 10)
+
+The chosen ARMA model has parameters p = 1, q = 10, and P = Q = S = 0. From the ACF and PACF plots as in figure 6, there seems to be no seasonality at all, although the highest value in the ACF plot is at lag = 7, so P = Q = S = 0 is set. And after lag = 10 the ACF values all fall into the blue confidence intervals, and also from the PACF it seem that there are some AR component as the PACF values having an exponential decay. In general, the ACF and PACF seems a bit disordered and the most reasonable approach is just take p = 1 to include AR component and q = 10 to include all the ACF values beyond the blue intervals.
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 7: In the left panel, the standarized residuals, ACF of residuals, normal Q-Q plot of standarized residuals, and p-values for Ljung-Box statistic for ARMA(1, 10). In the right Panel, those for MA(10)"}
+armod1 = sarima(double.diffs, p = 1, q = 10, d = 0, P = 0, Q = 0, S = 0, D = 0)
+armod2 = sarima(double.diffs, p = 0, q = 10, d = 0, P = 0, Q = 0, S = 0, D = 0)
+```
+
+#### 3.2.2 Differencing with MA(10)
+
+The chosen ARMA model has parameters p = 0, q = 10, and P = Q = S = 0. Similar to the previous model, from the ACF and PACF plots as in figure 6, there seems to be no seasonality at all, although the highest value in the ACF plot is at lag = 7, so P = Q = S = 0 is set. And after lag = 10 the ACF values all fall into the blue confidence intervals, and it is hard to tell whether there is an AR component from the rather strange ACF and PACF plots in figure 6, so the conservative approach is only taking the MA component and so q = 10 and p = 0.
+
+## 4 Model Comparison and Selection
+
+These four model are examined and compared via time series cross validation. Taken into account of the fact that the first 50 days of data are very small, and quite different comparing to the rest of the data, according to Figure 1, the rest 248 days are split in half, and the last 125 days were taken as the testing set. In other words, the training set is the first 177 days of Covid Recording in Gotham City, namely from 3/29/2020 to 9/21/2020, and the testing set is the last 125 days of Covid Recording, namely from 9/22/2020 to 1/24/2021. 
+
+These four model's performances are characterized by the root-mean-square prediction error (RMSPE), as shown in Table 1. It can be seen that the model 3.1.1, namely Parametric Model with ARMA(0,1)x(0,1)[7], has the lowest cross validated RMSPE, with a RMSPE of 0.6337195, and so it would be chosen as the forecasting model used in the following section. The second best model was the other parametric model as shown in the table. This is somewhat surprising as the ACF plots of the differencing models appeared to be more stationary. 
+
+```{r, echo=FALSE, results = 'asis'}
+Model <- c("Parametric Model with ARMA(0,1)x(0,1)[7]", 
+           "Parametric Model with ARMA(1,1)x(0,1)[7]",
+           "Weekly and First-order Differencing with ARMA(1, 10)", 
+           "Weekly and First-order Differencing with MA(10)")
+RMSPE <- c(0.6337195, 0.6902921, 0.8320793, 0.8272343)
+tb <- as.data.frame(cbind(Model, RMSPE))
+kable(tb)
+```
+
+
+
+
+
+
+## 5 Results
+A fourth degree polynomial Parametric model with MA(1) x SMA(1)7 noise will be used to forecast the log COVID cases from 1/25/2021 to 2/3/2021. Let $Y_t$ represents the COVID new cases at time t with addictive noise term $X_t$. $X_t$ is a additive noise term, which is a stationary process defined by MA(1) x SMA(1)7. $X_t$ is restated below as part of Equation (3), where $W_t$ is defined as white noise with variance $\sigma^2_W$. 
+
+\begin{equation}
+\begin{aligned}
+\text log({ Cases }_{t})=& \beta_{0}+\beta_{1} t+\beta_{2} t^{2}+\beta_{3} t^{3}+\beta_{4} t^{4}]+X_t
+\end{aligned}
+\end{equation}
+
+\begin{equation}
+X_{t}=W_{t}+\theta W_{t-1}+\Theta W_{t-7}
+\end{equation}
+
+```{r, echo=FALSE, include = F}
+newID <- c(303:312)
+
+forecast3 <- c(12.104, 12.1247, 12.142, 12.1594, 12.1768, 12.1944, 12.212, 12.2297, 12.2475, 12.2653)
+forecast2 <- sarima.for(model11$residuals, n.ahead=10, p = 0, q = 1, d = 0, P = 0, Q = 1, S = 7, D = 1)$pred
+forecast <- forecast3 + forecast2
+pred <- data.frame(cbind(newID, exp(forecast)))
+df_pred <- select(df, ID, cases)
+colnames(pred) <- c("ID", "cases")
+comb <- rbind(df_pred, pred)
+```
+
+### 5.1 Estimation of model parameters
+
+The parameter looks reasonable as the first order trend  has the highest value, indicates a upward trend.
+```{r, echo=FALSE, results = 'axis'}
+Coefficients <- c("Parametric Intercept", 
+           "Parametric Order 1",
+           "Parametric Order 2", 
+           "Parametric Order 3",
+           "Parametric Order 4",
+           "MA1",
+           "SMA1")
+Value <- c("7.257e+00", "1.031e-01", "-8.262e-04", "2.595e-06", "-2.696e-09", "0.4351", "-0.6352")
+tb2 <- as.data.frame(cbind(Coefficients, Value ))
+kable(tb2)
+```
+
+
+
+
+### 5.2 Predictions
+
+```{r, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE, results='hide',fig.show="hold", out.width="40%", fig.cap = "Figure 8: Forecasts of new Covid cases in the next 10 days. Only 110 data are included, and the last 10 are the predictions, which are in red."}
+ggplot() + 
+  geom_line(aes(x = ID,y = cases), data = slice(comb, 199:308), col = "red") +
+  geom_line(aes(x = ID,y = cases), data = slice(comb, 199:298)) +
+  geom_point(aes(x = ID, y = cases), data = pred, col = "red") +
+  xlab("Date") + ylab("Cases") + ggtitle("Forecasts of New Covid Cases in the Next 10 Days") +
+  theme(plot.title = element_text(face = "bold")) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(plot.title = element_text(size  = 17)) +
+  theme(axis.text = element_text(size = 10)) +
+  theme(axis.title = element_text(size = 13)) 
+```
+
+As shown in figure 8, the model described in the previous part of this section was used to predict the number of new Covid cases in the fifth borrough in Gotham city in the next 10 days, namely from 1/25/2021 - 2/3/2021. It seems like it's following the trend and seasonality of the previous data and seems like a convincing prediction.
+
+
+
+
